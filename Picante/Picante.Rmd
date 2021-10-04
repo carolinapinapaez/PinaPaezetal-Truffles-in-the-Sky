@@ -1,0 +1,392 @@
+---
+title: "PicantePez_Sep14"
+author: "Carolina Paez"
+date: "9/14/2020"
+output: html_document
+---
+```{r}
+library(picante)
+library(permute)
+library(lattice)
+library(vegan)
+library(tidyverse)
+library(magrittr)
+library(dplyr)
+library(gdata)
+
+comm <- read.csv("99_clustering_PICANTE.csv", as.is = TRUE, row.names = 1)
+comm %<>% t() %>% as.data.frame()
+comm <- decostand(comm, method="total")#hellinger: square root standarizaiton; hellinger: square root of method = "total" (Legendre & Gallagher 2001).
+write.csv(comm, "sqr_picante_99.csv")
+
+pogon.matrix <- data.matrix(comm, rownames.force = NA) #matrix
+
+traits <- read.table(file = "traits.txt") #data.frame
+
+metadata <-read.csv("meta_PICANTE.csv", header = TRUE, row.names = 1)
+metadata %<>% rownames_to_column(var= "site")
+
+phy <- read.tree(file = "99_PICANTE_2.newick") #phylo
+phy
+
+#Check for mismatches/missing species
+combined <- match.phylo.comm(phy, comm)
+phy <- combined$phy
+phy
+comm <- combined$comm
+
+combined <- match.phylo.data(phy, traits)
+phy <- combined$phy
+traits <- combined$traits
+
+all.equal(rownames(comm), rownames(metadata))
+
+```
+#Calculate Faith's PD
+```{r}
+comm.pd <- pd(comm, phy)
+comm.pd
+write.csv(comm.pd, "comm.pd_Apr23.csv")
+
+#Test for PD differences among orientation
+t.test(comm.pd$PD ~ metadata$orientation_NS)#nosignificant
+```
+
+#Compare PD and species richness
+```{r}
+plot(comm.pd$PD ~ comm.pd$SR, xlab = "Species richness", ylab = "Faith's PD")
+```
+
+#######################################################
+
+Phylogenetic structure: MPD, MNTD, sesMPD, sesMNTD
+
+Two approaches were used to calculate the observed phylogenetic distances among species in a community: Mean Pair Distance, which is more sensitive to phylogenetic patterns across the tree (dispersion), and Mean Nearest Taxon Distance, which is more sensitive to phylogenetic patterns closer to the tips (clustering) (Kembel et al., 2010).  
+
+1. Unweighted Richness
+1.1 MPD
+1.2 MNTD
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(RColorBrewer)
+#convert phylogeny to a distance matrix
+phy.dist <- cophenetic(phy)
+#1.1 MPD
+comm.sesmpd <- ses.mpd(comm, phy.dist, null.model = "richness", abundance.weighted = FALSE, runs = 999, iterations = 1000)
+comm.sesmpd
+comm.sesmpd %<>% rownames_to_column(var= "site")
+write.csv(comm.sesmpd, "richness_sesMDP.csv")
+
+t.test(comm.sesmpd$mpd.obs.z ~ metadata$orientation_NS)
+
+
+mycols <- 17
+mycolors <- colorRampPalette(brewer.pal(8, "Dark2"))(mycols)
+
+ 
+ggplot(comm.sesmpd, aes(site,mpd.obs.z, colour = site)) + 
+  geom_point(size = 5, alpha = 0.55) + scale_color_manual(values = mycolors) +
+  scale_y_continuous(name="ses.MPD", limits=c(-3, 3)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_hline(yintercept=2, linetype="dashed", 
+                color = "red", size=0.5) +
+  geom_hline(yintercept=-2, linetype="dashed", 
+                color = "red", size=0.5) +
+   ggtitle("Richness ses.Mean Pair Distance") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+#1.2 MNTD
+comm.sesmntd <- ses.mntd(comm, phy.dist, null.model = "richness", abundance.weighted = FALSE, runs = 999)
+comm.sesmntd
+comm.sesmntd %<>% rownames_to_column(var= "site")
+write.csv(comm.sesmntd, "richness_sesMNTD.csv")
+
+ggplot(comm.sesmntd, aes(site,mntd.obs.z, colour = site)) + 
+  geom_point(size = 5, alpha = 0.55) + scale_color_manual(values = mycolors) +
+  scale_y_continuous(name="ses.MNTD", limits=c(-3, 3)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_hline(yintercept=2, linetype="dashed", 
+                color = "red", size=0.5) +
+  geom_hline(yintercept=-2, linetype="dashed", 
+                color = "red", size=0.5) +
+   ggtitle("Richness ses.Mean Near Taxon Distance") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+#A data frame of results for each community
+##ntaxa Number of taxa in community
+##mpd.obs Observed mpd in community
+##mpd.rand.mean Mean mpd in null communities
+##mpd.rand.sd Standard deviation of mpd in null communities
+##mpd.obs.rank Rank of observed mpd vs. null communities
+##mpd.obs.z Standardized effect size of mpd vs. null communities (= (mpd.obs - mpd.rand.mean)/ mpd.rand.sd, equivalent to -NRI)
+##mpd.obs.p P-value (quantile) of observed mpd vs. null communities (= mpd.obs.rank / runs + 1)
+##runs Number of randomizations
+```
+
+
+2. Unweigthed Independent swap
+2.1 MPD
+2.2 MNTD
+```{r}
+comm.sesmpd_IS <- ses.mpd(comm, phy.dist, null.model = "independentswap", abundance.weighted = FALSE, runs = 999)
+comm.sesmpd_IS
+comm.sesmpd_IS %<>% rownames_to_column(var= "site")
+write.csv(comm.sesmpd_IS, "independentSwap_sesMDP.csv")
+
+ggplot(comm.sesmpd_IS, aes(site,mpd.obs.z, colour = site)) + 
+  geom_point(size = 5, alpha = 0.55) + scale_color_manual(values = mycolors) +
+  scale_y_continuous(name="ses.MPD", limits=c(-3, 3)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_hline(yintercept=2, linetype="dashed", 
+                color = "red", size=0.5) +
+  geom_hline(yintercept=-2, linetype="dashed", 
+                color = "red", size=0.5) +
+   ggtitle("Idependent Swap ses Mean Pair Distance") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+
+#Calculate ses.mntd
+comm.sesmntd_IS <- ses.mntd(comm, phy.dist, null.model = "independentswap", abundance.weighted = FALSE, runs = 999)
+comm.sesmntd
+comm.sesmntd_IS %<>% rownames_to_column(var= "site")
+write.csv(comm.sesmntd, "independentSwap_sesMNTD.csv")
+
+
+ggplot(comm.sesmntd, aes(site,mntd.obs.z, colour = site)) + 
+  geom_point(size = 5, alpha = 0.55) + scale_color_manual(values = mycolors) +
+  scale_y_continuous(name="ses.MNTD", limits=c(-3, 3)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_hline(yintercept=2, linetype="dashed", 
+                color = "red", size=0.5) +
+  geom_hline(yintercept=-2, linetype="dashed", 
+                color = "red", size=0.5) +
+   ggtitle("Idependent Swap ses Mean Near Taxon Distance") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+```
+
+
+3. Weighted Rhichness: Distance among individuals
+3.1 MPD
+3.2 MNTD
+```{r}
+#3.1
+comm.sesmpd_RW <- ses.mpd(comm, phy.dist, null.model = "richness", abundance.weighted = TRUE, runs = 999)
+comm.sesmpd_RW
+write.csv(comm.sesmpd_RW, "RW_sesMDP.csv")
+
+#3.2
+comm.sesmntd_RW <- ses.mntd(comm, phy.dist, null.model = "richness", abundance.weighted = TRUE, runs = 999)
+comm.sesmntd_RW
+write.csv(comm.sesmntd_RW, "RW_sesMNTD.csv")
+
+```
+
+4. Weighted Independent swap: Distance among individuals
+4.1 MPD
+4.2 MNTD
+```{r}
+#4.1
+comm.sesmpd_ISW <- ses.mpd(comm, phy.dist, null.model = "independentswap", abundance.weighted = TRUE, runs = 999)
+comm.sesmpd_ISW
+write.csv(comm.sesmpd_ISW, "ISW_sesMDP.csv")
+
+#4.2
+comm.sesmntd_ISW <- ses.mntd(comm, phy.dist, null.model = "independentswap", abundance.weighted = TRUE, runs = 999)
+comm.sesmntd_ISW
+write.csv(comm.sesmntd, "ISW_sesMNTD.csv")
+```
+
+
+Tree with abundance heatmap
+```{r}
+# Plotting the tree
+library(phangorn)
+library(gdata)
+library(ape)
+library(ggtree)
+library(tidyverse)
+library(magrittr)
+library(phytools)
+
+data.set <- read.csv("sqr_picante_99.csv")
+data.set[data.set==""] <- NA_character_  
+  
+t1 <- ggtree(phy)
+
+t1 <- t1 + geom_tiplab(size=2, align=FALSE, linesize=.5)
+
+t1
+
+t1 <- ggtree(phy,layout = 'rectangular', branch.length = "none") %<+% data.set + geom_tippoint(aes(color=host),align=FALSE, hjust = -0.1, size = 5) +  scale_color_manual(values =c("#9590FF", "#00BF7D", "#E76BF3", "#00B0F6", "#D89000", "#969696"))
+  
+
+# To add the layers we need to remove the taxa names and add them as rownames for the data frame to be used
+df.1 <- data.set
+rownames(df.1) <- df.1[,1]
+df.1 <- df.1[,-1]
+
+
+library(ggnewscale)
+library(wesanderson)
+library(RColorBrewer)
+library(viridis)
+
+
+p1 <- t1 + new_scale_fill()
+p1 <- gheatmap(p1, subset(df.1, select=c(3)), width=0.07, offset=0.076) + scale_fill_viridis_c(option = "plasma") + geom_treescale()
+p1
+
+
+p2 <- p1 + new_scale_fill()
+p2 <- gheatmap(p2, subset(df.1, select=c(4)), width=0.07, offset=0.122) + scale_fill_viridis_c(option = "plasma")
+p2
+
+p3 <- p2 + new_scale_fill()
+p3 <- gheatmap(p3, subset(df.1, select=c(5)), width=0.07, offset=0.168) + scale_fill_viridis_c(option = "plasma")
+p3
+
+p4 <- p3 + new_scale_fill()
+p4 <- gheatmap(p4, subset(df.1, select=c(6)), width=0.07, offset=0.214) + scale_fill_viridis_c(option = "plasma")
+p4
+
+p5 <- p4 + new_scale_fill()
+p5 <- gheatmap(p5, subset(df.1, select=c(7)), width=0.07, offset=0.260) + scale_fill_viridis_c(option = "plasma")
+p5
+
+p6 <- p5 + new_scale_fill()
+p6 <- gheatmap(p6, subset(df.1, select=c(8)), width=0.07, offset=0.306) + scale_fill_viridis_c(option = "plasma")
+p6
+
+p7 <- p6 + new_scale_fill()
+p7 <- gheatmap(p7, subset(df.1, select=c(9)), width=0.07, offset=0.352) + scale_fill_viridis_c(option = "plasma")
+p7
+
+p8 <- p7 + new_scale_fill()
+p8 <- gheatmap(p8, subset(df.1, select=c(10)), width=0.07, offset=0.398) + scale_fill_viridis_c(option = "plasma")
+p8
+
+p9 <- p8 + new_scale_fill()
+p9 <- gheatmap(p9, subset(df.1, select=c(11)), width=0.07, offset=0.444) + scale_fill_viridis_c(option = "plasma")
+p9
+
+p10 <- p9 + new_scale_fill()
+p10 <- gheatmap(p10, subset(df.1, select=c(12)), width=0.07, offset=0.490) + scale_fill_viridis_c(option = "plasma")
+p10
+
+p11 <- p10 + new_scale_fill()
+p11 <- gheatmap(p11, subset(df.1, select=c(13)), width=0.07, offset=0.536) + scale_fill_viridis_c(option = "plasma")
+p11
+
+p12 <- p11 + new_scale_fill()
+p12 <- gheatmap(p12, subset(df.1, select=c(14)), width=0.07, offset=0.582) + scale_fill_viridis_c(option = "plasma")
+p12 
+```
+
+
+#MANTEL TEST-PINE ONLY
+##MANTEL distance decay
+
+```{r}
+library(vegan)
+library(geosphere)
+library(dplyr)
+library(permute)
+library(lattice)
+library(tidyverse)
+library(magrittr)
+library(gdata)
+
+#abundance data frame
+abund <- read.csv("99_clustering_PICANTE.csv", as.is = TRUE, row.names = 1)
+abund %<>% t() %>% as.data.frame()
+abund <- decostand(abund, "hellinger") ##Hellinger-transform the species dataset
+
+#Longitud and latitude
+pogon.env <- read.csv("meta_PICANTE.csv", as.is = TRUE, row.names = 1)
+geo <- data.frame(pogon.env$Long, pogon.env$Lat)
+
+#abundance data frame - Bray-Curtis
+dist.abund <- vegdist(abund, method = "bray")
+
+#Geograohic data frame-haversine distance
+d.geo <- distm(geo, fun = distHaversine)
+dist.geo <- as.dist(d.geo)
+
+#abundance vs geographic haversine distance
+abund_geo  = mantel(dist.abund, dist.geo, method = "spearman", permutations = 9999, na.rm = TRUE)
+abund_geo
+
+#PLOT
+#PLOTS
+aa <- as.vector(dist.abund)
+gg <- as.vector(dist.geo)
+
+#new data frame with vectorized distance matrices
+mat <- data.frame(aa, gg)
+
+#abundance vs geographic distance plot
+mm = ggplot(mat, aes(y = aa, x = gg/1000)) + 
+    geom_point(size = 5, alpha = 0.5) + 
+  xlim(0, 250) +
+  labs(x = "Spatial distance (km)", y = "Bray-Curtis Dissimilarity") + 
+    theme( axis.text.x = element_text(face = "bold",colour = "black", size = 12), 
+        axis.text.y = element_text(face = "bold", size = 11, colour = "black"), 
+        axis.title= element_text(face = "bold", size = 14, colour = "black"), 
+        panel.background = element_blank(), 
+        panel.border = element_rect(fill = NA, colour = "black"))
+mm
+```
+
+#Correlation between Pinaceae richness (presence/absence matrix) and BC dissimilarity
+
+```{r}
+library(vegan)
+library(geosphere)
+library(dplyr)
+library(permute)
+library(lattice)
+library(tidyverse)
+library(magrittr)
+library(gdata)
+
+#abundance data frame all sites, all otus
+abund <- read.csv("99_clustering.csv", as.is = TRUE, row.names = 1)
+abund %<>% t() %>% as.data.frame()
+abund <- decostand(abund, "hellinger") ##Hellinger-transform the species dataset
+
+#Distance on binary data
+pa_data <- read.csv("pinaceae_matrix.csv", as.is = TRUE, row.names = 1)
+dist.pa_data <- vegdist(pa_data, binary = TRUE, method = "jaccard")
+
+#abundance data frame - Bray-Curtis
+dist.abund <- vegdist(abund, method = "bray")
+
+
+
+#abundance vs geographic haversine distance
+abund_pina  = mantel(dist.abund, dist.pa_data, method = "spearman", permutations = 9999, na.rm = TRUE)
+abund_pina
+
+#PLOT
+#PLOTS
+aa <- as.vector(dist.abund)
+pp <- as.vector(dist.pa_data)
+
+#new data frame with vectorized distance matrices
+mat <- data.frame(aa, pp)
+
+#abundance vs Pinaceae comm plot
+mm = ggplot(mat, aes(y = aa, x = pp)) + 
+    geom_point(size = 5, alpha = 0.5) + 
+  labs(x = "Pinaceae community Jaccard", y = "Rhizopogon Bray-Curtis Dissimilarity") + theme( axis.text.x = element_text(face = "bold",colour = "black", size = 12), 
+        axis.text.y = element_text(face = "bold", size = 11, colour = "black"), 
+        axis.title= element_text(face = "bold", size = 14, colour = "black"), 
+        panel.background = element_blank(), 
+        panel.border = element_rect(fill = NA, colour = "black"))
+mm
+```
+

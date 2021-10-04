@@ -1,0 +1,13 @@
+site,island,orientation_NS,plant_community,pinaceae_richness,elevation_m,Lat,Long,ppt_mm,tmin_C,tmean_C,tmax_C
+Catalina_2,Catalina,N,Pinus,2,2165,32.395053,-110.700828,793.16,6.7,12.5,18.3
+Chiricahua_2,Chiricahua,N,Pinus,4,2500,31.9179,-109.28027,836.03,4.4,10.7,17
+Elenita_1,Elenita,S,Pinus,3,1960,31.001912,-110.390015,355.3,6.9,16.8,26.6
+Elenita_2,Elenita,S,Pinus,2,2100,31.003795,-110.383758,355.3,6.9,16.8,26.6
+El_Pinal_2,El_Pinal,N,Pinus,3,2200,33.29763,-110.839447,834.61,4.1,10.6,17.1
+Galiuro_1,Galiuro,N,Pinus,4,1560,32.505997,-110.250382,499.27,7.6,15,22.3
+Huachuca_1,Huachuca,S,Pinus,2,1960,31.445602,-110.369728,695.03,5.6,13.1,20.7
+Huachuca_2,Huachuca,S,Pinus,2,1935,31.450808,-110.375222,629.43,6,13.6,21.2
+Mariquita_1,Mariquita,S,Pinus,4,2500,31.05683,-110.381675,355.3,6.9,16.8,26.6
+Mariquita_2,Mariquita,S,Pinus,3,2350,31.04995,-110.38041,355.3,6.9,16.8,26.6
+Pinaleno_1,Pinaleno,N,Pinus,2,1700,32.647977,-109.816818,644.55,4.9,12.2,19.5
+Santa_Rita_1,Santa_Rita,S,Pinus,4,1835,31.708182,-110.870942,802.96,8.9,15.7,22.6

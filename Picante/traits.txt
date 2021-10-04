@@ -1,0 +1,15 @@
+	97%_id	name	subgenus	host
+ELP2-RB-620	ELP2-RB-620	R._salebrosus_1	Amylopogon	Pinus
+HUA2-RB-540	ELP2-RB-620	R._salebrosus_2	Amylopogon	Pinus
+CAT2-RB-106	CAT2-RB-106	R._truncatus	none	Pinus
+CAT2-RB-127	CAT2-RB-127	R._fuscorubens	Rhizopogon	Pinus
+MAR2-RB-807	MAR2-RB-807	R._occidentalis	Rhizopogon	Pinus
+ELE2-RB-757	ELE2-RB-757	R._ochraceorubens	Rhizopogon	Pinus
+ELE2-RB-748	ELE2-RB-748	R._granuloflavus	Roseoli	Pinus
+HUA1-CPP-2018-157	RIT1-RB-669	R._pseudoroseolus	Roseoli	Pinus
+RIT1-RB-670	RIT1-RB-669	R._pseudoroseolus_2	Roseoli	Pinus
+ELP2-RB-621	ELP2-RB-621	R._pseudoroseolus_3	Roseoli	Pinus
+ELP2-RB-633	ELP2-RB-633	R._roseolus	Roseoli	Pinus
+ELP1-RB-579	ELP2-RB-633	R._roseolus_2	Roseoli	Pinus
+RIT1-RB-646	ELP2-RB-633	R._roseolus_3	Roseoli	Pinus
+CAT2-RB-099	CAT2-RB-099	R._evadens	Versicolores	Pinus
