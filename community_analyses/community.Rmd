@@ -1,0 +1,461 @@
+---
+title: "vsearch_97"
+author: "Carolina Paez"
+date: "4/6/2021"
+output: html_document
+---
+
+#1. Loading data 99% clustering
+```{r}
+library(permute)
+library(lattice)
+library(vegan)
+library(tidyverse)
+library(magrittr)
+library(dplyr)
+library(gdata)
+library(ggthemes)
+
+#ALL data set; 17 sites and 15 otus.
+otu_table <- read.csv("99_clustering.csv", as.is = TRUE, row.names = 1)
+otu_table %<>% t() %>% as.data.frame()
+
+taxo_table <- read.csv("Taxo_table_99.csv", as.is = TRUE, row.names = 1)
+
+metadata <- read.csv("meta.csv", as.is = TRUE, row.names = 1)
+
+#adding sampleid as a column
+otu_table %<>% rownames_to_column(var= "site")
+metadata %<>% rownames_to_column(var= "site")
+site_joined_table <- left_join(metadata, otu_table, by="site")
+write_csv(site_joined_table, "site_joined_table.csv")
+```
+
+#2. Calculating alpha diversity indices
+```{r}
+library(patchwork)
+site.abundance.matrix <- site_joined_table[,13:33]
+site.abundance.matrix<- decostand(site.abundance.matrix, method="total")#hellinger: square root standarizaiton; hellinger: square root of method = "total" (Legendre & Gallagher 2001).
+
+site.indices <- site_joined_table[,c("island","site", "plant_community")]
+site.indices$Richness <- rowSums(site.abundance.matrix>0)
+site.indices$Shannon <- diversity(site.abundance.matrix) #shannon is default
+site.indices$InvertedSimpson <- diversity(site.abundance.matrix, index = "invsimpson")
+
+write_csv(site.indices, "site.indices_Apr6.csv")
+
+#Plotting
+forest_shan <- ggplot(site.indices, aes(plant_community, Shannon, fill=plant_community)) + 
+  geom_boxplot() +  
+  ggpubr::rotate_x_text(angle = 65) +
+  theme(legend.position = "none") +
+ scale_fill_manual(values=c("#40b8d0", "#b2d183"))
+forest_shan 
+
+
+forest_rich <- ggplot(site.indices, aes(plant_community, Richness, fill=plant_community)) + 
+  geom_boxplot() +  
+  ggpubr::rotate_x_text(angle = 65) +
+  theme(legend.position = "none") +
+ scale_fill_manual(values=c("#40b8d0", "#b2d183"))
+forest_rich 
+
+
+(forest_rich + forest_shan) 
+
+
+#Shannon's diversity
+
+#Multiple linear regression of differences in species richness based on range and forest stand
+#ANOVA analysing diversity as a function of forest stand, range, and their interaction
+shannon.model <- lm(Shannon ~ plant_community * island, data = site.indices)
+anova(shannon.model)
+
+t.shannon <- t.test(Shannon ~ plant_community, data = site.indices,
+                        alternative = 'greater')
+t.shannon
+
+#ANOVA analysing Shannon's diversity as a function of forest stand
+anova_result <-aov(Shannon ~ plant_community, site.indices)
+summary(anova_result)
+
+
+#Species richness
+
+#Multiple linear regression of differences in species richness based on range and plant community
+#ANOVA analysing diversity as a function of plant community, range, and their interaction
+sr.model <- lm(Richness ~ plant_community * island, data = site.indices)
+anova(sr.model)
+
+t.rich <- t.test(Richness ~ plant_community, data = site.indices,
+                        alternative = 'greater')
+t.rich
+
+#ANOVA analysing Richness as a function of forest stand
+r.anova_result <-aov(Richness ~ plant_community, site.indices)
+summary(r.anova_result)
+```
+
+#3. Barplot
+```{r}
+##RELATIVE ABUNDANCE BARPLOT
+library(reshape)
+#abundance table
+otu <- read.csv("99_clustering_orderedbysubgenus.csv", as.is = TRUE, row.names = 1)
+otu %<>% t() %>% as.data.frame()
+
+##Relative abundance matrix from absolute abundance matrix
+site.rel.matrix <- sweep(otu,1,rowSums(otu),"/")
+write.csv(site.rel.matrix, "site.rel.matrix.csv")
+
+otu.rel.org <- read.csv("site.rel.matrix.csv", as.is = TRUE, row.names = 1)
+otu.rel.org %<>% rownames_to_column(var = 'site')
+
+df_long <- melt(otu.rel.org, id = c("site"))
+df_long$site <- factor(df_long$site, levels = unique(df_long$site))
+
+library(RColorBrewer)
+library(scales)
+ 
+otu.colors <- c( "#6F2DA8", "#9590FF",
+                 "#3E8914", "#3DA35D", "#AEF359",
+                 "#8b0049", "#702e49",  "#E0115F","#FB607F", "#FF00FF", "#FBAED2", "#F0D8D8",
+                 "#00A5FF", 
+                  "#cc7722", "#c49102", "#FDA50f", "#E3B778", "#5d4f04", "#E6DBAC","#FFF200", "#BCC0BB")
+     
+mx <- ggplot(df_long, aes(x = site, fill = variable, y = value)) +
+  geom_bar(stat = "identity", colour = "black", alpha = 0.76) +
+  theme(axis.text.x = element_text(angle = 90, size = 14, colour = "black", vjust = 0.5, hjust = 1, face= "bold"), axis.title.y = element_text(size = 16, face = "bold"), legend.title = element_text(size = 16, face = "bold"), legend.text = element_text(size = 12, face = "bold", colour = "black"), axis.text.y = element_text(colour = "black", size = 12, face = "bold")) + 
+    scale_y_continuous(expand = c(0,0)) + 
+    labs(x = "", y = "Relative Abundance (%)", fill = "OTU") + 
+    scale_fill_manual(values = otu.colors) + 
+    theme_classic() +
+    ggpubr::rotate_x_text(angle = 35)
+  
+mx
+```
+
+#4. We assessed completeness of sampling via species accumulation curves inferred in R and Vegan.
+```{r}
+##Calculating species accumulation curves
+
+#Loading data
+otu.data <- read.csv(paste0('site_joined_table.csv'),
+                     as.is = T)
+rownames(otu.data) <- otu.data$site
+
+
+#Species accumulation curves: all data
+#isolate community data
+comm.matrix <- otu.data[13:length(otu.data)]
+
+#create data frame
+all.sa <- data.frame(community = rep(c('Overall','Pinus','Pseudotsuga'),
+                           c(17,12,5)),
+           Sites = NA,
+           Richness = NA,
+           sd = NA)
+
+#Overall
+overall.sa <- specaccum(comm.matrix)
+all.sa[all.sa$community == 'Overall', 'Sites'] <- overall.sa$sites
+all.sa[all.sa$community == 'Overall', 'Richness'] <- overall.sa$richness
+all.sa[all.sa$community == 'Overall', 'sd'] <- overall.sa$sd
+
+#Pinus
+#isolate Pinus stands data
+
+p.b <- rownames(otu.data[otu.data$plant_community == 'Pinus',])
+p.b.data <- comm.matrix[rownames(comm.matrix) %in% p.b,]
+pb.sa <- specaccum(p.b.data)
+all.sa[all.sa$community == 'Pinus', 'Sites'] <- pb.sa$sites
+all.sa[all.sa$community == 'Pinus', 'Richness'] <- pb.sa$richness
+all.sa[all.sa$community == 'Pinus', 'sd'] <- pb.sa$sd
+
+
+#Pseudotsuga
+#isolate Pseudotsuga stands data
+p.u <- rownames(otu.data[otu.data$plant_community == 'Pseudotsuga',])
+p.u.data <- comm.matrix[rownames(comm.matrix) %in% p.u,]
+pu.sa <- specaccum(p.u.data)
+all.sa[all.sa$community == 'Pseudotsuga', 'Sites'] <- pu.sa$sites
+all.sa[all.sa$community == 'Pseudotsuga', 'Richness'] <- pu.sa$richness
+all.sa[all.sa$community == 'Pseudotsuga', 'sd'] <- pu.sa$sd
+
+
+#plot
+ggplot(all.sa, aes(x = Sites,
+                   y = Richness,
+                   color = community)) +
+  geom_smooth(se = F) +
+  theme_classic()
+
+
+SAC <- ggplot(all.sa, aes(x = Sites,
+                   y = Richness,
+                   color = community)) +
+  geom_point(data=all.sa, aes(x=Sites, y=Richness), size = 3) + 
+  geom_line(data=all.sa, aes(x=Sites, y=Richness)) +
+  geom_ribbon(data=all.sa ,aes(x=Sites,
+                                   ymin=(Richness-2*sd),
+                                   ymax=(Richness+2*sd)),
+  alpha=0.1) +
+  xlim(0, 25) +
+  theme_bw() +
+  expand_limits(y=c(0,25)) +
+  ylab('OTUs') +
+  xlab('Sites') +
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+  theme(axis.text = element_text(size=22, color = 'black'),
+        axis.title = element_text(size = 28), legend.position = "none") +
+  theme(axis.title.x = element_text(margin = margin(t = 30)),
+        axis.title.y = element_text(margin = margin(r = 30))) +
+  theme(legend.position = "bottom")
+
+SAC
+```
+
+#5. ORDINATION
+```{r}
+library(magrittr)
+library(tidyverse)
+library(phyloseq)
+library(vegan)
+library(ggplot2)
+library(ggthemes)
+library(ggrepel)
+library(viridis)
+library(RColorBrewer)
+
+# Data standarization: square root BRAY-CURTIS
+OTUs <- read.csv("99_clustering.csv", as.is = TRUE, row.names = 1)
+OTUs %<>% t() %>% as.data.frame()
+OTUs_Sqrt<- decostand(OTUs, method="total")
+set.seed(999)
+min.r <- 0.1 #vector calculation, minimum r square; 0.1
+min.p.val <- 0.05
+
+
+Sqrt_nms <- metaMDS(OTUs_Sqrt, distance = "bray", trymax = 500) 
+Sqrt_scores <- as.data.frame(scores(Sqrt_nms, display = "sites"))
+Sqrt_scores %<>% rownames_to_column(var = 'site')
+metadata %<>% rownames_to_column(var = 'site')
+OTUs_Sqrt %<>% rownames_to_column(var = 'site')
+taxo_table %<>% rownames_to_column(var = 'otu')
+
+Sqrt_scores %<>% left_join(metadata, by = 'site') #ALL VARIABLES ASSOCIATED WITH YOUR SAMPLES
+Sqrt_scores %<>% left_join(OTUs_Sqrt, by = 'site') #ALL VARIABLES WITH WHICH YOU ORDINATED YOUR SAMPLES
+
+mycols <- 17
+mycolors <- colorRampPalette(brewer.pal(8, "Dark2"))(mycols)
+library(scales)
+show_col(mycolors)
+
+mycolors <- c( "#1B9E77", "#897932", 
+                 "#C8611F", "#8D6B86", "#9B58A5",
+                 "#DD2E8D", "#A66753",  "#70A61B", 
+                 "#BBA90B") 
+
+#SITE
+ggplot(Sqrt_scores, aes(x = NMDS1, y = NMDS2,  color = island, shape = plant_community, label = site)) +
+  geom_point(size = 6, alpha = 0.55) + 
+  scale_color_manual(values = mycolors) +
+  geom_text(size=2)                
+  
+
+#VECTORS using env.fit
+
+Sqrt_nms.meta <- metadata %>% select(site, elevation_m, Lat, Long, ppt_mm, tmin_C, tmean_C, tmax_C, plant_community) #HERE'S YOUR CHANCE TO SPECIFY VECTORS FOR YOUR QUANTITATIVE ENV/SAMPLE DATA
+Sqrt_nms.site_otu <- OTUs_Sqrt %>% select(site, "CAT1-RG-002",
+"CAT1-RM-019",
+"CAT2-RB-099",
+"CAT2-RB-106",
+"CAT2-RB-127",
+"CAT2-RM-048",
+"CHI1-CPP-2017-063",
+"ELE2-RB-748",
+"ELE2-RB-757",
+"ELP1-RB-579",
+"ELP1-RG-501",
+"ELP1-RM-535",
+"ELP2-RB-620",
+"ELP2-RB-621",
+"ELP2-RB-633",
+"HUA1-CPP-2018-157",
+"HUA2-RB-540",
+"MAR2-RB-807",
+"PIN1-RM-105",
+"RIT1-RB-646",
+"RIT1-RB-670") #HERE'S YOUR CHANCE TO SPECIFY VECTORS FROM YOUR MAIN RESPONSE (E.G. SPECIES) DATA
+
+Sqrt_nms.combo <- left_join(Sqrt_nms.meta, Sqrt_nms.site_otu, by = 'site') #USE THIS IF YOUR SPECIFYING VECTORS FROM BOTH META AND MAIN VAR
+Sqrt_nms.combo %<>% column_to_rownames("site")
+Sqrt_nms.fit <- envfit(Sqrt_nms, Sqrt_nms.combo) #THIS IS WHERE VECTOR DATA ARE GENERATED--CHANGE SECOND TERM TO nms.meta, nms.var, or nms.combo
+
+filt <- data.frame(r = Sqrt_nms.fit$vectors$r,pval = Sqrt_nms.fit$vectors$pvals) %>%
+  rownames_to_column(var = "otu") %>%
+  filter(r > min.r, pval < min.p.val) #SET R2 AND PVALUE FILTERS HERE FOR VECTORS
+
+write_csv(filt, "99clustering__vectorsvalues.csv")
+
+vector.scores <- as.data.frame(scores(Sqrt_nms.fit, display = "vectors"))
+vector.scores %<>% rownames_to_column(var = 'otu')
+vector.scores %<>% left_join(taxo_table, by = 'otu')
+vector.scores %<>% filter(otu %in% filt$otu)
+vector.scores %<>% column_to_rownames(var = 'otu')
+vector.scores %<>% rownames_to_column (var = "vectors")
+
+cols <- colorRampPalette(brewer.pal(8, "Dark2"))
+pal <- cols(length(unique(metadata$Lat))) # SELECT DATA FRAME COLUMN HERE
+
+Sqrt_plot <- ggplot(Sqrt_scores) +
+  geom_point(mapping = aes(x = NMDS1, y = NMDS2, color = island, shape = plant_community), size = 6, alpha = 0.55) + 
+  geom_segment(data = vector.scores, #ADDS VECTORS TO YOUR ORDINATION; ADJUST THE SIZE/STYLE OF THE VECTORS HERE
+               aes(x = 0, xend = NMDS1*.8, y = 0, yend = NMDS2*.8),
+               arrow = arrow(length = unit(0.5, "cm")), colour = "black") +
+  geom_label_repel(data = vector.scores, aes(x = NMDS1*1, y = NMDS2*1, label = vectors )) + 
+                   #color = 'white',
+                   #size = 2,
+                   #segment.size = 1.5,
+                   #segment.colour = 'gray',
+                   #box.padding = 1) +
+  scale_color_manual(values = mycolors) #USE THIS IF YOU WANT TO COLOR YOUR POINTS BY A CATEGORICAL VARIABLE
+  #scale_fill_gradient2(midpoint = 3) + #OR USE THIS IF YOU WANT TO COLOR YOUR POINTS BY A CONTINUOUS VARIABLE
+  #labs(color = "") + #USE THIS TO INDICATE WHAT VARIABLE YOU'RE COLORING BY (CURRENTLY BLANK)
+  #ggtitle("") +
+  #geom_text(mapping = aes(x = NMDS1, y = NMDS2, label=row.names(scores)), hjust=0, vjust=0) +
+  #USE THE ABOVE IF YOU WANT TO LABEL YOUR POINTS WITH SAMPLE NAMES; THIS HELPS WITH OUTLIER INVESTIGATION
+ 
+ 
+Sqrt_plot
+
+```
+
+#6. PERMANOVA
+###Model 1: General model, all sites, all otus; this model would elucidate if there are general trends by island or by type of forest.
+
+```{r}
+############## PERMANOVA ###############
+##1. Calculate Bray-Curtis Distance
+Sqrt.BC.dist<-vegdist(OTUs_Sqrt, method='bray')
+
+##2. PERMANOVA
+m1_adonis <- adonis2(Sqrt.BC.dist ~ plant_community * island, by = "margin", data=metadata)
+m1_adonis
+```
+
+#Model 2: Paired forest model: this model would elucidate if there are differences in the Rhizopogon communities when comparing these two forest stands within island
+
+```{r}
+#Loading data
+otu_table <- read.csv("99_clustering_pineDF_only.csv", as.is = TRUE, row.names = 1)
+OTUs_Sqrt <- decostand(otu_table, method="total")#hellinger: square root standarizaiton; hellinger: square root of method = "total" (Legendre & Gallagher 2001).a
+OTUs_Sqrt %<>% t() %>% as.data.frame()
+metadata <- read.csv("meta_pineDF_only.csv", as.is = TRUE, row.names = 1)
+taxo_table <- read.csv("Taxo_table_99_pineDF_only.csv", as.is = TRUE, row.names = 1)
+
+
+set.seed(999)
+min.r <- 0.1 #vector calculation, minimum r square; 0.1
+min.p.val <- 0.05
+
+Sqrt_nms <- metaMDS(OTUs_Sqrt, distance = "bray", trymax = 500) # trymax ALLOWS YOU TO SET THE NUMBER OF ITERATIONS VEGAN GOES THROUGH
+#'distance' CAN ALSO BE ADJUSTED AS NEEDED
+
+
+Sqrt_scores <- as.data.frame(scores(Sqrt_nms, display = "sites"))#Options for display are sites, species
+Sqrt_scores %<>% rownames_to_column(var = 'site')
+metadata %<>% rownames_to_column(var = 'site')
+OTUs_Sqrt %<>% rownames_to_column(var = 'site')
+taxo_table %<>% rownames_to_column(var = 'otu')
+
+Sqrt_scores %<>% left_join(metadata, by = 'site') #ALL VARIABLES ASSOCIATED WITH YOUR SAMPLES
+Sqrt_scores %<>% left_join(OTUs_Sqrt, by = 'site') #ALL VARIABLES WITH WHICH YOU ORDINATED YOUR SAMPLES
+
+
+mycolors <- c( "#1B9E77", "#897932", "#8D6B86", "#9B58A5", "#70A61B") 
+
+#SITE
+ggplot(Sqrt_scores, aes(x = NMDS1, y = NMDS2,  color = island, shape = plant_community, label = site)) +
+  geom_point(size = 8, alpha = 0.7) + 
+  scale_color_manual(values = mycolors) #+
+  geom_text(size=2)                
+  
+
+#VECTORS using env.fit
+Sqrt_nms.meta <- metadata %>% select(site, elevation_m, island, Lat, Long, ppt_mm, tmin_C, tmean_C, tmax_C, plant_community) #HERE'S YOUR CHANCE TO SPECIFY VECTORS FOR YOUR QUANTITATIVE ENV/SAMPLE DATA
+Sqrt_nms.site_otu <- OTUs_Sqrt %>% select(site, "CAT1-RG-002",
+"CAT1-RM-019",
+"CAT2-RB-099",
+"CAT2-RB-106",
+"CAT2-RB-127",
+"CAT2-RM-048",
+"CHI1-CPP-2017-063",
+"ELE2-RB-757",
+"ELP1-RB-579",
+"ELP1-RG-501",
+"ELP1-RM-535",
+"ELP2-RB-620",
+"ELP2-RB-621",
+"ELP2-RB-633",
+"HUA1-CPP-2018-157",
+"HUA2-RB-540",
+"MAR2-RB-807",
+"PIN1-RM-105",
+"RIT1-RB-646",
+"RIT1-RB-670") #HERE'S YOUR CHANCE TO SPECIFY VECTORS FROM YOUR MAIN RESPONSE (E.G. SPECIES) DATA
+
+
+Sqrt_nms.combo <- left_join(Sqrt_nms.meta, Sqrt_nms.site_otu, by = 'site') #USE THIS IF YOUR SPECIFYING VECTORS FROM BOTH META AND MAIN VAR
+Sqrt_nms.combo %<>% column_to_rownames("site")
+Sqrt_nms.fit <- envfit(Sqrt_nms, Sqrt_nms.combo) #THIS IS WHERE VECTOR DATA ARE GENERATED--CHANGE SECOND TERM TO nms.meta, nms.var, or nms.combo
+
+filt <- data.frame(r = Sqrt_nms.fit$vectors$r,pval = Sqrt_nms.fit$vectors$pvals) %>%
+  rownames_to_column(var = "otu") %>%
+  filter(r > min.r, pval < min.p.val) #SET R2 AND PVALUE FILTERS HERE FOR VECTORS
+
+write_csv(filt, "model2_vector_values.csv")
+
+vector.scores <- as.data.frame(scores(Sqrt_nms.fit, display = "vectors"))
+vector.scores %<>% rownames_to_column(var = 'otu')
+vector.scores %<>% left_join(taxo_table, by = 'otu')
+vector.scores %<>% filter(otu %in% filt$otu)
+vector.scores %<>% column_to_rownames(var = 'otu')
+vector.scores %<>% rownames_to_column (var = "vectors")
+
+cols <- mycolors <- c( "#1B9E77", "#897932", "#8D6B86", "#9B58A5", "#70A61B") 
+pal <- cols(length(unique(metadata$Lat))) # SELECT DATA FRAME COLUMN HERE
+
+Sqrt_plot <- ggplot(Sqrt_scores) +
+  geom_point(mapping = aes(x = NMDS1, y = NMDS2, color = island, shape = plant_community), size = 8, alpha = 0.7) + 
+  geom_segment(data = vector.scores, #ADDS VECTORS TO YOUR ORDINATION; ADJUST THE SIZE/STYLE OF THE VECTORS HERE
+               aes(x = 0, xend = NMDS1*0.3, y = 0, yend = NMDS2*0.3),
+               arrow = arrow(length = unit(0.3, "cm")), colour = "black") +
+  geom_label_repel(data = vector.scores, aes(x = NMDS1*0.3, y = NMDS2*0.3, label = vectors )) + scale_color_manual(values = mycolors) 
+ 
+Sqrt_plot
+
+############## PERMANOVA ###############
+##1. Calculate Bray-Curtis Distance
+Sqrt.BC.dist<-vegdist(OTUs_Sqrt, method='bray')
+
+##2. PERMANOVA
+m1_adonis2 <- adonis2(Sqrt.BC.dist ~ plant_community + island, by = "margin", data=metadata)
+m1_adonis2
+
+m2_adonis <- adonis(Sqrt.BC.dist ~ plant_community, strata = metadata$island, data = metadata)
+m2_adonis
+
+m2.2_adonis <- adonis(Sqrt.BC.dist ~ island/plant_community, strata = metadata$island, data = metadata)
+m2.2_adonis
+
+m3_adonis2 <- adonis2(Sqrt.BC.dist ~ island, data = metadata)
+m3_adonis2 
+```
+
+
+
+
+
+
+
